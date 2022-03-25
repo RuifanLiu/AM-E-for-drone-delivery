@@ -14,6 +14,7 @@ from utils.functions import parse_softmax_temperature, torch_load_cpu, _load_mod
 # from problems.epdp.problem_epdp import EPDP
 # from problems.epdp.problem_sepdp import SEPDP
 from nets.attention_model import AttentionModel
+from nets.attention_model_rnn import AttentionModel_RNN
 # from nets.attention_edge_model import AME_Model
 mp = torch.multiprocessing.get_context('spawn')
 
@@ -36,21 +37,35 @@ def load_model(path, model_type, opts):
     #         checkpoint_encoder=False,
     #         shrink_size=None
     #     )
-    # elif model_type == 'attention':
-    model = AttentionModel(
-            embedding_dim=128,
-            hidden_dim=128,
-            problem=problem,
-            n_encode_layers=3,
-            mask_inner=True,
-            mask_logits=True,
-            normalization='batch',
-            tanh_clipping=8,
-            checkpoint_encoder=False,
-            shrink_size=None,
-            attention_type =opts.attention_type, 
-        )
-    
+    if model_type == 'attention':
+        model = AttentionModel(
+                embedding_dim=128,
+                hidden_dim=128,
+                problem=problem,
+                n_encode_layers=3,
+                mask_inner=True,
+                mask_logits=True,
+                normalization='batch',
+                tanh_clipping=8,
+                checkpoint_encoder=False,
+                shrink_size=None,
+                attention_type =opts.attention_type, 
+            )
+    elif model_type == 'attention_rnn':
+        model = AttentionModel_RNN(
+                embedding_dim=128,
+                hidden_dim=128,
+                problem=problem,
+                n_encode_layers=3,
+                mask_inner=True,
+                mask_logits=True,
+                normalization='batch',
+                tanh_clipping=8,
+                checkpoint_encoder=False,
+                shrink_size=None,
+                attention_type =opts.attention_type, 
+            )
+        
     
     # Overwrite model parameters by parameters to load
     load_data = torch_load_cpu(model_filename)
@@ -279,7 +294,7 @@ if __name__ == "__main__":
         "Cannot specify result filename with more than one dataset or more than one width"
 
     widths = opts.width if opts.width is not None else [0]
-    '''
+    
     for width in widths:
         for dataset_path in opts.datasets:
         # dataset_path = opts.datasets
@@ -300,5 +315,5 @@ if __name__ == "__main__":
         print('Average cost is {}'.format(np.mean(costs)))
         graph.plot()
         
-        
+        '''
             

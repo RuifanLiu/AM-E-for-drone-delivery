@@ -3,6 +3,8 @@ from ortools.constraint_solver import routing_enums_pb2
 from multiprocessing import Pool
 from tqdm import tqdm
 
+from utils.energy_cost_fun import energy_cost_fun
+
 import numpy as np
 import torch
 
@@ -16,6 +18,8 @@ def _solve_cp(input):
     station = input['station']
     loc = input['loc']
     load = input['load']
+    wind_mag = torch.zeros_like(input['wind_mag'])
+    wind_dir = torch.zeros_like(input['wind_dir'])
     
     loc_all = torch.cat((loc, station, depot[None, :]), 0)
     
@@ -36,7 +40,8 @@ def _solve_cp(input):
     
     dis_matrix = (x_loc - y_loc).norm(p=2, dim=-1)
     
-    en_cost_matrix = dis_matrix*DIS2SOC*AMP
+    # en_cost_matrix = dis_matrix*DIS2SOC*AMP
+    en_cost_matrix = energy_cost_fun(x_loc, y_loc, wind_mag, wind_dir)
     
     cust_load = np.concatenate([np.ones(req_count), -1*np.ones(req_count), np.zeros(1+stat_count)])
 

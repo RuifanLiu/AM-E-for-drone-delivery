@@ -9,15 +9,19 @@ class StateSEPDP(StateEPDP):
      SPEED_STD = 3.59/20
      SPEED_MEAN = 20/20
      
+     MEAN_WIND = 5.0 # mean value for weibull distribution
      
-        
+
+     
      @staticmethod
      def initialize(input, visited_dtype=torch.uint8):
-
+    
         depot = input['depot']
         station = input['station']
         loc = input['loc']
         load = input['load']
+        wind_mag = input['wind_mag']*StateSEPDP.MEAN_WIND
+        wind_dir = input['wind_dir']
 
         batch_size, n_loc, _ = loc.size()
         _, n_station, _ = station.size()
@@ -28,6 +32,8 @@ class StateSEPDP(StateEPDP):
         return StateSEPDP(
             coords=torch.cat(( loc, station, depot[:, None, :]), -2),
             load=load,
+            wind_mag=wind_mag,
+            wind_dir=wind_dir,
             ids=torch.arange(batch_size, dtype=torch.int64, device=loc.device)[:, None],  # Add steps dimension
             prev_a=(n_loc+n_station)*torch.ones(batch_size, 1, dtype=torch.long, device=loc.device),
             used_capacity=load.new_zeros(batch_size, 1),
@@ -46,7 +52,24 @@ class StateSEPDP(StateEPDP):
             i=torch.zeros(1, dtype=torch.int64, device=loc.device),  # Vector with length num_steps
             to_delivery=to_delivery
         )
+        '''
         
+    def get_final_cost(self):
+        
+        batch_size, n_loc = self.load.size()
+        final_cost = self.total_cost + StateEPDP.DIS2SOC*(self.coords[self.ids, -1, :] - self.cur_coord).norm(p=2, dim=-1)
+        
+        if not self.all_finished():
+            visited_loc = self.visited_[:, :, :n_loc]
+            final_cost += StateSEPDP.PENALITY*(visited_loc==0).sum(-1)
+
+        return final_cost
+    
+     def get_failure_rate(self):
+        
+        failed_rate = torch.mean(self.failed_flag.float())
+        
+        return failed_rate
      def update(self, selected):
         assert self.i.size(0) == 1, "Can only update if state represents single step"
 
@@ -104,22 +127,7 @@ class StateSEPDP(StateEPDP):
             failed_flag = failed_flag
         )
     
-     def get_final_cost(self):
-        
-        batch_size, n_loc = self.load.size()
-        final_cost = self.total_cost + StateEPDP.DIS2SOC*(self.coords[self.ids, -1, :] - self.cur_coord).norm(p=2, dim=-1)
-        
-        if not self.all_finished():
-            visited_loc = self.visited_[:, :, :n_loc]
-            final_cost += StateSEPDP.PENALITY*(visited_loc==0).sum(-1)
 
-        return final_cost
-    
-     def get_failure_rate(self):
-        
-        failed_rate = torch.mean(self.failed_flag.float())
-        
-        return failed_rate
 
      def get_mask(self):
         """
@@ -157,7 +165,7 @@ class StateSEPDP(StateEPDP):
         exceeds_cap[:,:,n_loc:] = 0
         mask_all = mask_all.to(exceeds_cap.dtype) | exceeds_cap
         return mask_all
-
+'''
 
 
 

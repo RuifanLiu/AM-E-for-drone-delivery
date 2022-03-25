@@ -5,6 +5,7 @@ import pickle
 
 from problems.epdp.state_epdp import StateEPDP
 from utils.beam_search import beam_search
+import numpy as np
 
 
 class EPDP(object):
@@ -14,6 +15,9 @@ class EPDP(object):
     BATTERY_CAPACITY = 1.0 # (w.l.o.g. energy capacity is 1, energy consumption should be scaled)
     
     DIS2SOC = 0.179 # linear coefficient transfer distance to state of charge
+    
+    
+    
 
     @staticmethod
     def get_costs(dataset, pi):  # pi:[batch_size, graph_size]
@@ -119,7 +123,7 @@ class EPDP(object):
         return beam_search(state, beam_size, propose_expansions)
 
 def make_instance(args):
-    loc, load, station, depot, *args = args
+    loc, load, station, depot, wind_mag, wind_dir, *args = args
     grid_size = 1
     if len(args) > 0:
         depot_types, customer_types, grid_size = args
@@ -127,7 +131,9 @@ def make_instance(args):
         'loc': torch.tensor(loc, dtype=torch.float) / grid_size,
         'load': torch.tensor(load, dtype=torch.float),
         'station': torch.tensor(station, dtype=torch.float) / grid_size,
-        'depot': torch.tensor(depot, dtype=torch.float) / grid_size
+        'depot': torch.tensor(depot, dtype=torch.float) / grid_size,
+        'wind_mag': torch.tensor([wind_mag], dtype=torch.float),
+        'wind_dir': torch.tensor([wind_dir], dtype=torch.float),
     }
 
 
@@ -156,7 +162,9 @@ class EPDPDataset(Dataset):
                     'loc': torch.FloatTensor(size, 2).uniform_(0, 1),
                     'load': torch.FloatTensor(size).uniform_(0, 4), # Weight of delivery package, Uniform 0-4
                     'station': torch.FloatTensor(3, 2).uniform_(0, 1),
-                    'depot': torch.FloatTensor(2).uniform_(0, 1)
+                    'depot': torch.FloatTensor(2).uniform_(0, 1),
+                    'wind_mag': torch.Tensor(np.random.weibull(2.0, 1)),
+                    'wind_dir': torch.FloatTensor(1).uniform_(0, 1)*2*np.pi,
                 }
                 for i in range(num_samples)
             ]

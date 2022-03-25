@@ -14,6 +14,7 @@ from options import get_options
 from train import train_epoch, validate, get_inner_model
 from reinforce_baselines import NoBaseline, ExponentialBaseline, CriticBaseline, RolloutBaseline, WarmupBaseline
 from nets.attention_model import AttentionModel
+from nets.attention_model_rnn import AttentionModel_RNN
 from nets.pointer_network import PointerNetwork, CriticNetworkLSTM
 
 from baselines._ortools import ort_solve
@@ -82,6 +83,7 @@ def run(opts):
     model_class = {
         'attention': AttentionModel,
         'pointer': PointerNetwork,
+        'attention_rnn': AttentionModel_RNN,
     }.get(opts.model, None)
     assert model_class is not None, "Unknown model: {}".format(model_class)
     model = model_class(

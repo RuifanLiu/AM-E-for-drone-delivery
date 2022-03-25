@@ -33,6 +33,7 @@ import torch
 import time
 import numpy as np
 from scipy.spatial import distance_matrix
+from utils.energy_cost_fun import energy_cost_fun
 
 ###########################
 # Problem Data Definition #
@@ -53,7 +54,7 @@ class Int_transfer():
 
 
 
-def solve_epdp_ortools(loc, load, station, depot, sec_local_search=0, battery_margin=0):
+def solve_epdp_ortools(loc, load, station, depot, wind_mag, wind_dir, sec_local_search=0, battery_margin=0):
     AMP = 10000000
     Tran = Int_transfer(AMP)
     DIS2SOC = 0.179
@@ -68,10 +69,15 @@ def solve_epdp_ortools(loc, load, station, depot, sec_local_search=0, battery_ma
     req_count = int((node_count-stat_count-1)/2)
     veh_count = 1
     
+    wind_mag = np.zeros_like([wind_mag])
+    wind_dir = np.zeros_like([wind_dir])
+    
     loc_all = np.concatenate((loc, station, depot[None,:]), 0)
     
     dis_matrix = distance_matrix(loc_all,loc_all)
-    en_cost_matrix = Tran.Float2Int(dis_matrix*DIS2SOC)
+
+    en_cost_matrix = energy_cost_fun((loc_all[None,:,None,:], loc_all[None,None,:,:]), wind_mag[None,:], wind_dir[None,:])
+    en_cost_matrix = Tran.Float2Int(np.array(en_cost_matrix.squeeze(0).cpu()))
     
     station_copynum = int(req_count/10)-1
     stat_count0 = stat_count
@@ -173,8 +179,8 @@ def solve_epdp_ortools(loc, load, station, depot, sec_local_search=0, battery_ma
     params.local_search_metaheuristic = (
         routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
         )
-    # params.time_limit.seconds = 1#sec_local_search
-    params.solution_limit = 100
+    params.time_limit.seconds = sec_local_search
+    # params.solution_limit = 100
 
     solution = routing.SolveWithParameters(params)
 

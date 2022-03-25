@@ -1,5 +1,13 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Sun Mar 20 16:14:23 2022
+
+@author: s313488
+"""
+
 import torch
 from torch import nn
+from torch.autograd import Variable
 from torch.utils.checkpoint import checkpoint
 import math
 from typing import NamedTuple
@@ -9,6 +17,8 @@ from nets.graph_encoder import GraphAttentionEncoder
 from nets.graph_encoder_edge import GraphAttentionEncoder_EDGE
 from nets.graph_encoder_egat import GraphAttentionEncoder_EGAT
 from nets.graph_encoder_hetero import GraphAttentionEncoder_HETERO
+
+from nets.rnn_layer import rnn_layer
 
 from torch.nn import DataParallel
 from utils.beam_search import CachedLookup
@@ -45,7 +55,7 @@ class AttentionModelFixed(NamedTuple):
         return super(AttentionModelFixed, self).__getitem__(key)
 
 
-class AttentionModel(nn.Module):
+class AttentionModel_RNN(nn.Module):
 
     def __init__(self,
                  embedding_dim,
@@ -60,7 +70,7 @@ class AttentionModel(nn.Module):
                  checkpoint_encoder=False,
                  shrink_size=None,
                  attention_type='Kool'):
-        super(AttentionModel, self).__init__()
+        super(AttentionModel_RNN, self).__init__()
 
         self.attention_type = attention_type
 
@@ -174,11 +184,20 @@ class AttentionModel(nn.Module):
         # For each node we compute (glimpse key, glimpse value, logit key) so 3 * embedding_dim
         self.project_node_embeddings = nn.Linear(embedding_dim, 3 * embedding_dim, bias=False)
         self.project_fixed_context = nn.Linear(embedding_dim, embedding_dim, bias=False)
-        self.project_step_context = nn.Linear(step_context_dim, embedding_dim, bias=False)
+        self.project_step_context = nn.Linear(embedding_dim, embedding_dim, bias=False)
         assert embedding_dim % n_heads == 0
         # Note n_heads * val_dim == embedding_dim so input to project_out is embedding_dim
         self.project_out = nn.Linear(embedding_dim, embedding_dim, bias=False)
+        
+        # rnn_embedding
+        n_rnnlayers = 3
+        self.rnn = rnn_layer(step_context_dim, embedding_dim, hidden_dim, n_rnnlayers)
+        
+    def rnn_init_hidden(self, hidden_dim):
+        """Trainable initial hidden state"""
 
+        return self.enc_init_hx, self.enc_init_cx
+    
     def set_decode_type(self, decode_type, temp=None):
         self.decode_type = decode_type
         if temp is not None:  # Do not change temperature if not provided
@@ -359,6 +378,12 @@ class AttentionModel(nn.Module):
         fixed = self._precompute(embeddings)
 
         batch_size = state.ids.size(0)
+        
+        # std = 1. / math.sqrt(self.hidden_dim)
+        # enc_init_hx = torch.cuda.FloatTensor(1,batch_size, self.hidden_dim).uniform_(-std, std)
+        # enc_init_cx = torch.cuda.FloatTensor(1,batch_size, self.hidden_dim).uniform_(-std, std)
+        # self.rnn_hidden = (enc_init_hx, enc_init_cx)
+        self.rnn.init_hidden(batch_size)
 
         # Perform decoding steps
         i = 0
@@ -490,6 +515,8 @@ class AttentionModel(nn.Module):
         assert not torch.isnan(log_p).any()
 
         return log_p, mask
+    
+
 
     def _get_parallel_step_context(self, embeddings, state, from_depot=False):
         """
@@ -552,7 +579,7 @@ class AttentionModel(nn.Module):
             if from_depot:
                 # 1st dimension is node idx, but we do not squeeze it since we want to insert step dimension
                 # i.e. we actually want embeddings[:, 0, :][:, None, :] which is equivalent
-                return torch.cat(
+                rnn_input = torch.cat(
                     (
                         embeddings[:, -1:, :].expand(batch_size, num_steps, embeddings.size(-1)),
                         # used capacity is 0 after visiting depot
@@ -560,9 +587,10 @@ class AttentionModel(nn.Module):
                     ),
                     -1
                 )
+                
             else:
 
-                return torch.cat(
+                rnn_input = torch.cat(
                     (
                         torch.gather(
                             embeddings,  # [batch_size, graph_size, embed_dim]
@@ -574,7 +602,9 @@ class AttentionModel(nn.Module):
                         self.problem.BATTERY_CAPACITY - state.used_capacity[:, :, None]
                     ),
                     -1
-                )
+                )                                           
+            # add rnn layers in context embedding
+            return self.rnn(rnn_input)
                         
                         
         elif self.is_orienteering or self.is_pctsp:
@@ -583,7 +613,7 @@ class AttentionModel(nn.Module):
                     torch.gather(
                         embeddings,
                         1,
-                        current_node.contiguous()
+                        current_node.contiguous()           
                             .view(batch_size, num_steps, 1)
                             .expand(batch_size, num_steps, embeddings.size(-1))
                     ).view(batch_size, num_steps, embeddings.size(-1)),

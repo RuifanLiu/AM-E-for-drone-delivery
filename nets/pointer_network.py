@@ -13,6 +13,7 @@ class Encoder(nn.Module):
         self.hidden_dim = hidden_dim
         self.lstm = nn.LSTM(input_dim, hidden_dim)
         self.init_hx, self.init_cx = self.init_hidden(hidden_dim)
+        
 
     def forward(self, x, hidden):
         output, hidden = self.lstm(x, hidden)

@@ -62,3 +62,4 @@ runfile('C:/Users/s313488/OneDrive - Cranfield University/Documents/Python/Atten
 
 debugfile('C:/Users/s313488/OneDrive - Cranfield University/Documents/Python/Attentions-EPDP-DRL/epdp_baseline.py',args="ortools 'data/epdp/epdp20_test_seed1000.pkl' -f -unable_multiprocessing --problem sepdp")
 
+runfile('C:/Users/s313488/OneDrive - Cranfield University/Documents/Python/Attentions-EPDP-DRL/generate_data.py',args="--name test --problem epdp --graph_sizes 20 --seed 100 --dataset_size 100")

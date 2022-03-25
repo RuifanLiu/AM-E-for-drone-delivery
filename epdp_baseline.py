@@ -216,7 +216,7 @@ def solve_gurobi(directory, name, loc, load, station, depot, disable_cache=False
         return None
 
 
-def solve_ortools(directory, name, loc, load, station, depot, sec_local_search=0, disable_cache=False, battery_margin=0):
+def solve_ortools(directory, name, loc, load, station, depot, wind_mag, wind_dir, sec_local_search=0, disable_cache=False, battery_margin=0):
     # Lazy import so we do not require ortools by default
     from problems.epdp.epdp_ortools import solve_epdp_ortools
 
@@ -227,7 +227,8 @@ def solve_ortools(directory, name, loc, load, station, depot, sec_local_search=0
         else:
             # 0 = start, 1 = end so add depot twice
             start = time.time()
-            objval, tour = solve_epdp_ortools(loc, load, station, depot,  sec_local_search=sec_local_search, battery_margin=battery_margin)
+            objval, tour = solve_epdp_ortools(loc, load, station, depot, wind_mag, wind_dir, \
+                                              sec_local_search=sec_local_search, battery_margin=battery_margin)
             duration = time.time() - start
             # save_dataset((objval, tour, duration), problem_filename)
 

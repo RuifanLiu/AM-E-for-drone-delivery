@@ -1,6 +1,7 @@
 import torch
 from typing import NamedTuple
 from utils.boolmask import mask_long2bool, mask_long_scatter
+from utils.energy_cost_fun import energy_cost_fun
 
 
 class StateEPDP(NamedTuple):
@@ -15,15 +16,18 @@ class StateEPDP(NamedTuple):
     ## Also, assume the battery capacity is 1.5kWh, the state of charge is:
     ##  SOC = E/(1.5*1000*3600)
     ## so:  SOC = 1933.2*10*1000*Dis/(20*Vel)/(1.5*1000*3600)
-    DIS2SOC = 0.179 # linear coefficient transfer distance to state of charge
+    # DIS2SOC = 0.179 # linear coefficient transfer distance to state of charge
     # DIS2SOC = 10/60*(0.7567)/0.7333
     BATTERY_CAPACITY = 1.0
     
     PENALITY = 1.0
+    MEAN_WIND = 0.0 # mean value for weibull distribution
     
     # Fixed input
     coords: torch.Tensor  # Depot + loc
     load: torch.Tensor
+    wind_mag: torch.Tensor
+    wind_dir: torch.Tensor
 
     # If this state contains multiple copies (i.e. beam search) for the same instance, then for memory efficiency
     # the coords and demands tensors are not kept multiple times, so we need to use the ids to index the correct rows.
@@ -75,6 +79,8 @@ class StateEPDP(NamedTuple):
         station = input['station']
         loc = input['loc']
         load = input['load']
+        wind_mag = input['wind_mag']*StateEPDP.MEAN_WIND
+        wind_dir = input['wind_dir']
 
         batch_size, n_loc, _ = loc.size()
         _, n_station, _ = station.size()
@@ -85,6 +91,8 @@ class StateEPDP(NamedTuple):
         return StateEPDP(
             coords=torch.cat(( loc, station, depot[:, None, :]), -2),
             load=load,
+            wind_mag=wind_mag,
+            wind_dir=wind_dir,
             ids=torch.arange(batch_size, dtype=torch.int64, device=loc.device)[:, None],  # Add steps dimension
             prev_a=(n_loc+n_station)*torch.ones(batch_size, 1, dtype=torch.long, device=loc.device),
             used_capacity=load.new_zeros(batch_size, 1),
@@ -108,11 +116,9 @@ class StateEPDP(NamedTuple):
         
         # assert self.all_finished()
         # final_cost = self.total_cost + StateEPDP.DIS2SOC*(self.coords[self.ids, -1, :] - self.cur_coord).norm(p=2, dim=-1)
-       
-        
         batch_size, n_loc = self.load.size()
-        final_cost = self.total_cost + StateEPDP.DIS2SOC*(self.coords[self.ids, -1, :] - self.cur_coord).norm(p=2, dim=-1)
-        
+        final_cost = self.total_cost + energy_cost_fun((self.coords[self.ids, -1, :], self.cur_coord), self.wind_mag,\
+                                                   self.wind_dir, command='airspeed', command_speed=15)
         if not self.all_finished():
             visited_loc = self.visited_[:, :, :n_loc]
             final_cost += StateEPDP.PENALITY*(visited_loc==0).sum(-1)
@@ -121,8 +127,7 @@ class StateEPDP(NamedTuple):
     
     def get_failure_rate(self):
         
-
-        failed_rate = torch.mean(self.failed_flag.float())
+        failed_rate = torch.mean(self.failed_flag.float(),-1)
         return failed_rate
 
     def update(self, selected):
@@ -152,16 +157,20 @@ class StateEPDP(NamedTuple):
         #     1,
         #     selected[:, None].expand(selected.size(0), 1, self.coords.size(-1))
         # )[:, 0, :]
-        total_cost = self.total_cost + StateEPDP.DIS2SOC*(cur_coord - self.cur_coord).norm(p=2, dim=-1)  # (batch_dim, 1)
-
+        energy_cost = energy_cost_fun((cur_coord, self.cur_coord), self.wind_mag,\
+                                                   self.wind_dir, command='airspeed', command_speed=15)
+            
+        
+        total_cost = self.total_cost + energy_cost + \
+            StateEPDP.PENALITY*(self.used_capacity + energy_cost > StateEPDP.BATTERY_CAPACITY)
+        failed_flag = self.failed_flag | (self.used_capacity + energy_cost > StateEPDP.BATTERY_CAPACITY)
         # Not selected_demand is demand of first node (by clamp) so incorrect for nodes that visit depot!
         #selected_demand = self.demand.gather(-1, torch.clamp(prev_a - 1, 0, n_loc - 1))
         # selected_demand = self.demand[self.ids, torch.clamp(prev_a - 1, 0, n_loc - 1)]
 
         # Increase capacity if depot is not visited, otherwise set to 0
         #used_capacity = torch.where(selected == 0, 0, self.used_capacity + selected_demand)
-        used_capacity = (self.used_capacity + StateEPDP.DIS2SOC*(cur_coord - self.cur_coord).norm(p=2, dim=-1)
-                         ) * (prev_a < n_loc).float()
+        used_capacity = (self.used_capacity + energy_cost) * (prev_a < n_loc).float()
 
         if self.visited_.dtype == torch.uint8:
             # Note: here we do not subtract one as we have to scatter so the first column allows scattering depot
@@ -184,6 +193,7 @@ class StateEPDP(NamedTuple):
         return self._replace(
             prev_a=prev_a, used_capacity=used_capacity, visited_=visited_,
             total_cost=total_cost, cur_coord=cur_coord, i=self.i + 1, to_delivery=to_delivery,
+            failed_flag = failed_flag
         )
 
     def all_finished(self):
@@ -237,13 +247,30 @@ class StateEPDP(NamedTuple):
         mask_all = torch.cat((mask_loc, mask_depot[:,:,None].expand(batch_size, 1, 1+StateEPDP.STATION_NO)), -1)
         
         # For demand steps_dim is inserted by indexing with id, for used_capacity insert node dim for broadcasting
-        energy_required = (self.cur_coord - self.coords[self.ids, :].squeeze(1)).norm(p=2, dim=-1)*StateEPDP.DIS2SOC
-        energy_to_station = (self.coords[:,:,None,:] - self.coords[:,n_loc:,:][:,None,:,:]).norm(p=2, dim=-1)*StateEPDP.DIS2SOC
+        # energy_required = energy_cost_fun((self.cur_coord, self.coords[self.ids, :].squeeze(1)), \
+        #                                   torch.zeros_like(self.wind_mag),  torch.zeros_like(self.wind_dir),\
+        #                                       command='airspeed', command_speed=15)
+        # energy_to_station = energy_cost_fun((self.coords[:,:,None,:], self.coords[:,n_loc:,:][:,None,:,:]), \
+        #                                   torch.zeros_like(self.wind_mag), torch.zeros_like(self.wind_dir),\
+        #                                       command='airspeed', command_speed=15)
+            
+        energy_required = energy_cost_fun((self.cur_coord, self.coords[self.ids, :].squeeze(1)), \
+                                          self.wind_mag, self.wind_dir,\
+                                              command='airspeed', command_speed=15)
+        energy_to_station = energy_cost_fun((self.coords[:,:,None,:], self.coords[:,n_loc:,:][:,None,:,:]), \
+                                          self.wind_mag, self.wind_dir,\
+                                              command='airspeed', command_speed=15)
+            
         energy_to_station = torch.min(energy_to_station,dim=-1).values
         exceeds_cap = (energy_required[:,None,:] + self.used_capacity[:, :, None] + energy_to_station[:,None,:] > self.BATTERY_CAPACITY)
+        exceeds_cap[:,:,n_loc:] = 0
         # # Nodes that cannot be visited are already visited or too much demand to be served now
         mask_all = mask_all.to(exceeds_cap.dtype) | exceeds_cap
         return mask_all
 
     def construct_solutions(self, actions):
         return actions
+    
+    
+        #     energy_required = (self.cur_coord - self.coords[self.ids, :].squeeze(1)).norm(p=2, dim=-1)*StateEPDP.DIS2SOC
+        # energy_to_station = (self.coords[:,:,None,:] - self.coords[:,n_loc:,:][:,None,:,:]).norm(p=2, dim=-1)*StateEPDP.DIS2SOC

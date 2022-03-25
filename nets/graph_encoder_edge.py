@@ -45,7 +45,7 @@ class MultiHeadAttention_EDGE(nn.Module):
         self.W_val = nn.Parameter(torch.Tensor(n_heads, input_dim, val_dim))
         
         self.E_val1 = nn.Parameter(torch.Tensor(n_heads, input_dim, 1))
-        # self.E_val2 = nn.Parameter(torch.Tensor(n_heads, input_dim, val_dim))
+        self.E_val2 = nn.Parameter(torch.Tensor(n_heads, input_dim, val_dim))
         
         # self.E_weight = nn.Parameter(torch.Tensor(1, val_dim))
 
@@ -90,7 +90,7 @@ class MultiHeadAttention_EDGE(nn.Module):
             
             shp_e = (self.n_heads, batch_size, graph_size, graph_size, -1)
             E = torch.matmul(eflat,self.E_val1).view(shp_e).squeeze(-1)
-            # V_e = torch.matmul(eflat,self.E_val2).view(shp_e).squeeze(-1)
+            V_e = torch.matmul(eflat,self.E_val2).view(shp_e).squeeze(-1)
 
         # last dimension can be different for keys and values
         shp = (self.n_heads, batch_size, graph_size, -1)
@@ -126,7 +126,7 @@ class MultiHeadAttention_EDGE(nn.Module):
         # edge_diag = torch.diagonal(edge_feat,dim1=2,dim2=3)[:,:,:,None]
         # edge = torch.matmul(edge_diag, self.E_weight)
 
-        heads = torch.matmul(attn, V) #+ torch.sum(torch.mul(attn.unsqueeze(-1), V_e),3)
+        heads = torch.matmul(attn, V) + torch.sum(torch.mul(attn.unsqueeze(-1), V_e),3)
 
         out = torch.mm(
             heads.permute(1, 2, 0, 3).contiguous().view(-1, self.n_heads * self.val_dim),

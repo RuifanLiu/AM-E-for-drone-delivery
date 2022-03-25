@@ -226,7 +226,7 @@ def sample_many(inner_func, get_cost_func, input, batch_rep=1, iter_rep=1):
 
         costs.append(cost.view(batch_rep, -1).t())
         pis.append(pi.view(batch_rep, -1, pi.size(-1)).transpose(0, 1))
-        fail_rates.append(fail_rate.view(batch_rep, -1))
+        fail_rates.append(fail_rate.view(batch_rep,-1))
     max_length = max(pi.size(-1) for pi in pis)
     # (batch_size * batch_rep, iter_rep, max_length) => (batch_size, batch_rep * iter_rep, max_length)
     pis = torch.cat(
@@ -270,7 +270,6 @@ def eval_apriori_routes(problem, dataset, routes, rollout_count):
             mean_cost += costs
 
     return  mean_cost / rollout_count, failed_rate
-
 
 def count_parameters(model):
     table = PrettyTable(["Modules", "Parameters"])

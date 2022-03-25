@@ -97,11 +97,12 @@ def generate_pctsp_data(dataset_size, pctsp_size, penalty_factor=3):
 def generate_pdp_data(dataset_size, epdp_size):
     
     return list(zip(
-        
         np.random.uniform(size=(dataset_size, epdp_size, 2)).tolist(),  # Node locations
         np.random.uniform(0,4,size=(dataset_size, epdp_size)).tolist(),  # load
         np.random.uniform(size=(dataset_size, 3, 2)).tolist(),  # Station location
         np.random.uniform(size=(dataset_size, 2)).tolist(),  # Depot location
+        np.random.weibull(2.,dataset_size).tolist(), # wind speed magnitude ~ Weibull(5.0,2.0)
+        (np.random.uniform(size=(dataset_size))*2*np.pi).tolist() # wind direction
     ))
 
 
