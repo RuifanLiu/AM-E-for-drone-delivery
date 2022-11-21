@@ -15,3 +15,5 @@ pretrained/
 *.ipynb
 *.ini
 *.png
+*/.json
+

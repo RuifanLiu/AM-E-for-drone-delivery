@@ -163,6 +163,8 @@ class StateEPDP(NamedTuple):
         
         total_cost = self.total_cost + energy_cost + \
             StateEPDP.PENALITY*(self.used_capacity + energy_cost > StateEPDP.BATTERY_CAPACITY)
+        
+        
         failed_flag = self.failed_flag | (self.used_capacity + energy_cost > StateEPDP.BATTERY_CAPACITY)
         # Not selected_demand is demand of first node (by clamp) so incorrect for nodes that visit depot!
         #selected_demand = self.demand.gather(-1, torch.clamp(prev_a - 1, 0, n_loc - 1))
@@ -247,19 +249,19 @@ class StateEPDP(NamedTuple):
         mask_all = torch.cat((mask_loc, mask_depot[:,:,None].expand(batch_size, 1, 1+StateEPDP.STATION_NO)), -1)
         
         # For demand steps_dim is inserted by indexing with id, for used_capacity insert node dim for broadcasting
-        # energy_required = energy_cost_fun((self.cur_coord, self.coords[self.ids, :].squeeze(1)), \
-        #                                   torch.zeros_like(self.wind_mag),  torch.zeros_like(self.wind_dir),\
-        #                                       command='airspeed', command_speed=15)
-        # energy_to_station = energy_cost_fun((self.coords[:,:,None,:], self.coords[:,n_loc:,:][:,None,:,:]), \
-        #                                   torch.zeros_like(self.wind_mag), torch.zeros_like(self.wind_dir),\
-        #                                       command='airspeed', command_speed=15)
-            
         energy_required = energy_cost_fun((self.cur_coord, self.coords[self.ids, :].squeeze(1)), \
-                                          self.wind_mag, self.wind_dir,\
+                                          torch.zeros_like(self.wind_mag),  torch.zeros_like(self.wind_dir),\
                                               command='airspeed', command_speed=15)
         energy_to_station = energy_cost_fun((self.coords[:,:,None,:], self.coords[:,n_loc:,:][:,None,:,:]), \
-                                          self.wind_mag, self.wind_dir,\
+                                          torch.zeros_like(self.wind_mag), torch.zeros_like(self.wind_dir),\
                                               command='airspeed', command_speed=15)
+            
+        # energy_required = energy_cost_fun((self.cur_coord, self.coords[self.ids, :].squeeze(1)), \
+        #                                   self.wind_mag, self.wind_dir,\
+        #                                       command='airspeed', command_speed=15)
+        # energy_to_station = energy_cost_fun((self.coords[:,:,None,:], self.coords[:,n_loc:,:][:,None,:,:]), \
+        #                                   self.wind_mag, self.wind_dir,\
+        #                                       command='airspeed', command_speed=15)
             
         energy_to_station = torch.min(energy_to_station,dim=-1).values
         exceeds_cap = (energy_required[:,None,:] + self.used_capacity[:, :, None] + energy_to_station[:,None,:] > self.BATTERY_CAPACITY)

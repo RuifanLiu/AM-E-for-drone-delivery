@@ -4,15 +4,19 @@ Created on Mon Jun 14 12:03:06 2021
 
 @author: s313488
 """
-
+import time
 from gurobipy import *
 import numpy as np
 from scipy.spatial import distance_matrix
+from utils.energy_cost_fun import energy_cost_fun
 
-def solve_epdp_gurobi(loc, load, station, depot, battery_margin=0, threads=1, timeout=None, gap=None):
+def solve_epdp_gurobi(loc, load, station, depot, wind_mag, wind_dir, battery_margin=0, threads=1, timeout=None, gap=None):
+    
     M = 1e5
+    
+    AMP = 1
     E_max = 1
-    e_max = 1-battery_margin
+    e_max = (1-battery_margin)*AMP
     e_min = 0
     v_e = 1.0
     
@@ -32,8 +36,15 @@ def solve_epdp_gurobi(loc, load, station, depot, battery_margin=0, threads=1, ti
     
     loc_all = np.concatenate((loc, station, depot[None,:]), 0)
 
-    dis_matrix = distance_matrix(loc_all,loc_all)
-    E_matrix = dis_matrix*DIS2SOC
+    # dis_matrix = distance_matrix(loc_all,loc_all)
+    # E_matrix = dis_matrix*DIS2SOC
+    
+    wind_mag = np.zeros_like([wind_mag])
+    wind_dir = np.zeros_like([wind_dir])
+    
+    E_matrix = energy_cost_fun((loc_all[None,:,None,:], loc_all[None,None,:,:]), wind_mag[None,:], wind_dir[None,:],\
+                                     command='airspeed', command_speed=15)
+    E_matrix = np.array(E_matrix.squeeze(0).cpu())*AMP
     
     station_copynum = int(req_count/10)-1
     # Treat depot as an additional station
@@ -136,17 +147,26 @@ def solve_epdp_gurobi(loc, load, station, depot, battery_margin=0, threads=1, ti
         m.addConstr(con6_1,GRB.GREATER_EQUAL,0) 
         m.addConstr(con6_2,GRB.LESS_EQUAL,0)        #constraint----6
         
-    for i in range(n_node):
-        for j in range(n_task):
+    for i in range(n_task):
+        for j in range(n_node):
             exp = e[i]-e[j]-E_matrix[i,j]/E_max
             con7_1 = exp + M*(1-x[i,j])
             con7_2 = exp - M*(1-x[i,j])
             m.addConstr(con7_1,GRB.GREATER_EQUAL,0) 
-            m.addConstr(con7_2,GRB.LESS_EQUAL,0)        #constraint----7
+            m.addConstr(con7_2,GRB.LESS_EQUAL,0)        #constraint----7(1)
             
-    for i in range(n_task, n_node-2):
-        con8_1 = e[i]-e_max
-        m.addConstr(con8_1,GRB.EQUAL,0)        #constraint----8
+    for i in range(n_task, n_node-1):
+        for j in range(n_node):
+            exp = e_max-e[j]-E_matrix[i,j]/E_max
+            con7_1 = exp + M*(1-x[i,j])
+            con7_2 = exp - M*(1-x[i,j])
+            m.addConstr(con7_1,GRB.GREATER_EQUAL,0) 
+            m.addConstr(con7_2,GRB.LESS_EQUAL,0)        #constraint----7(2)
+    
+            
+    # for i in range(n_task, n_node-2):
+    #     con8_1 = e[i]-e_max
+    #     m.addConstr(con8_1,GRB.EQUAL,0)        #constraint----8
     con8_2 = e[n_node-2]-e_max
     m.addConstr(con8_2,GRB.EQUAL,0) 
     
@@ -177,7 +197,7 @@ def solve_epdp_gurobi(loc, load, station, depot, battery_margin=0, threads=1, ti
     
     minexp=quicksum(E_matrix[i,j]*x[i,j] for i in range(n_node) for j in range(n_node))
     m.setObjective(minexp,GRB.MINIMIZE)
-    #m.Params.OutputFlag = 0
+    m.Params.OutputFlag = 0
     if timeout:
         m.Params.timeLimit = timeout
     else:
@@ -185,13 +205,14 @@ def solve_epdp_gurobi(loc, load, station, depot, battery_margin=0, threads=1, ti
     # if gap:
     #     m.Params.mipGap = gap * 0.01  # Percentage
     #     m.Params.mipGap = 1e-5
-    # m.Params.tolerance = 1e-4
+    # m.Params.tolerance = 1e-5
     
     m.optimize()
     m.write('mymodel.lp')
               
-    print('Obj: %g' % m.objVal)
+    # print('Obj: %g' % m.objVal)
     # print(m.getAttr("X", m.getVars()))
+    # print([v.x for v  in m.getVars() if v.varname[0]=='e'])
     
     output = m.getVars()
     output_x = np.zeros([n_node,n_node])
@@ -214,10 +235,8 @@ def solve_epdp_gurobi(loc, load, station, depot, battery_margin=0, threads=1, ti
             output_t[ind_t] = v.x
             ind_t += 1
     
-    
-    tour_with_statcopy, tour, outpur_e_reorder = solution2path(output_x, output_e, n_task, n_station, n_depot, station_copynum)
-    
-    
+    tour_with_statcopy, tour, output_e_reorder = solution2path(output_x, output_e, n_task, n_station, n_depot, station_copynum)
+    # print(output_e_reorder)
     return m.objVal, [tour] 
         
 def solution2path(sol, output_e, n_task, n_station, n_depot, station_copynum):
@@ -229,7 +248,7 @@ def solution2path(sol, output_e, n_task, n_station, n_depot, station_copynum):
         path.append(next_node)
         
         
-    print('Tour: {}'.format(path))
+    # print('Tour: {}'.format(path))
     
     path_adjust = np.copy(path)
     for _ in range(station_copynum):

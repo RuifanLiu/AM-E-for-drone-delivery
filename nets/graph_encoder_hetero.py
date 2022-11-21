@@ -152,6 +152,7 @@ class MultiHeadAttention_HETERO(nn.Module):
         Q_pick_alldelivery = torch.matmul(pick_flat, self.W3_query).view(shp_q_alldelivery)  # (self.n_heads, batch_size, n_pick, key_size)
         K_alldelivery = torch.matmul(delivery_flat, self.W_key).view(shp_alldelivery)  # (self.n_heads, batch_size, n_pick, -1)
         V_alldelivery = torch.matmul(delivery_flat, self.W_val).view(shp_alldelivery)  # (n_heads, batch_size, n_pick, key/val_size)
+        
         # pickup -> station
         Q_pick_station = torch.matmul(pick_flat, self.W7_query).view(shp_q_station)  # (self.n_heads, batch_size, n_pick, key_size)
         K_station = torch.matmul(station_flat, self.W_key).view(shp_station)

@@ -180,7 +180,7 @@ def solve_opga(directory, name, depot, loc, prize, max_length, disable_cache=Fal
     return -prize, [i - 1 for x, y, p, i, t in tour[1:-1]], duration
 
 
-def solve_gurobi(directory, name, loc, load, station, depot, disable_cache=False, timeout=None, gap=None, battery_margin=0):
+def solve_gurobi(directory, name, loc, load, station, depot, wind_mag, wind_dir, disable_cache=False, timeout=None, gap=None, battery_margin=0):
     # Lazy import so we do not need to have gurobi installed to run this script
     from problems.epdp.epdp_gurobi import solve_epdp_gurobi
 
@@ -195,7 +195,7 @@ def solve_gurobi(directory, name, loc, load, station, depot, disable_cache=False
             start = time.time()
 
             cost, tour = solve_epdp_gurobi(
-                loc, load, station, depot, battery_margin=battery_margin, threads=1, timeout=timeout, gap=gap
+                loc, load, station, depot, wind_mag, wind_dir, battery_margin=battery_margin, threads=1, timeout=timeout, gap=gap
             )
             duration = time.time() - start  # Measure clock time
             save_dataset((cost, tour, duration), problem_filename)
@@ -301,7 +301,7 @@ if __name__ == "__main__":
     parser.add_argument('-n', type=int, help="Number of instances to process")
     parser.add_argument('--offset', type=int, help="Offset where to start processing")
     parser.add_argument('--results_dir', default='results', help="Name of results directory")
-    parser.add_argument('--battery_margin', type=float, default= 0, help="Safety margin of battery")
+    parser.add_argument('--battery_margin', type=float, default= 0.0, help="Safety margin of battery")
     parser.add_argument('--problem', default='epdp', help="Problem to verify the planned route")
 
     opts = parser.parse_args()
@@ -419,5 +419,5 @@ if __name__ == "__main__":
         dataset = problem.make_dataset(filename=dataset_path, num_samples=100, offset=succeed)
         ref_costs, failure_rate = eval_apriori_routes(problem, dataset, tours, 1 if opts.problem[0] == 's' else 1)
         print("Reference cost on validate dataset {} +- {}".format(ref_costs.mean(), ref_costs.std()))
-        print("Failure rate on validate dataset {}".format(failure_rate))
+        print("Failure rate on validate dataset {}".format(failure_rate.mean()))
         

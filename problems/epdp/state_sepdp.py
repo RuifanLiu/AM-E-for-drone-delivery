@@ -11,8 +11,6 @@ class StateSEPDP(StateEPDP):
      
      MEAN_WIND = 5.0 # mean value for weibull distribution
      
-
-     
      @staticmethod
      def initialize(input, visited_dtype=torch.uint8):
     

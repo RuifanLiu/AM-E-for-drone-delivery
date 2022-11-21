@@ -76,7 +76,8 @@ def solve_epdp_ortools(loc, load, station, depot, wind_mag, wind_dir, sec_local_
     
     dis_matrix = distance_matrix(loc_all,loc_all)
 
-    en_cost_matrix = energy_cost_fun((loc_all[None,:,None,:], loc_all[None,None,:,:]), wind_mag[None,:], wind_dir[None,:])
+    en_cost_matrix = energy_cost_fun((loc_all[None,:,None,:], loc_all[None,None,:,:]), wind_mag[None,:], wind_dir[None,:],\
+                                     command='airspeed', command_speed=15)
     en_cost_matrix = Tran.Float2Int(np.array(en_cost_matrix.squeeze(0).cpu()))
     
     station_copynum = int(req_count/10)-1
@@ -130,7 +131,8 @@ def solve_epdp_ortools(loc, load, station, depot, wind_mag, wind_dir, sec_local_
         from_node = manager.IndexToNode(from_index)
         to_node = manager.IndexToNode(to_index)
         if to_node in station_node:
-            soc_status = -1*AMP
+            soc_status = int(en_cost_matrix[from_node][to_node])
+            soc_status = soc_status - 1*AMP
         else:
             soc_status = int(en_cost_matrix[from_node][to_node])
         return soc_status
@@ -139,17 +141,34 @@ def solve_epdp_ortools(loc, load, station, depot, wind_mag, wind_dir, sec_local_
 
     routing.AddDimension(
         soc_callback_index,
-        AMP*1,
+        1*AMP,
         1000*AMP,
         True,
         'SOC'
         )
     SOC_dimension = routing.GetDimensionOrDie('SOC')
     
-    for node_idx in range(len(en_cost_matrix)):
-        index = manager.NodeToIndex(node_idx)
-        SOC_dimension.CumulVar(index).SetRange(0, int(AMP*(1-battery_margin)))
+    # for node_idx in range(len(en_cost_matrix)):
+    #     index = manager.NodeToIndex(node_idx)
+    #     # if node_idx not in station_node:
+    #     #     SOC1_dimension.SlackVar(index).SetValue(0)
+    #     # else:
+    #     SOC1_dimension.SlackVar(index).SetRange(0, 1*AMP)
+    
+    # for node_idx in range(len(en_cost_matrix)):
+    #     index = manager.NodeToIndex(node_idx)
+    #     SOC1_dimension.CumulVar(index).SetRange(0, int(AMP*(1-battery_margin)))
+    #     # SOC1_dimension.CumulVar(index).SetRange(-int(AMP*(1-battery_margin)), 0)
+    #     if node_idx in station_node:
+    #         index = manager.NodeToIndex(node_idx)
+    #         SOC1_dimension.CumulVar(index).SetRange(0, 0)
             
+    for index in range(node_count+1):
+        SOC_dimension.CumulVar(index).SetRange(0, int(AMP*(1-battery_margin)))
+        # SOC1_dimension.CumulVar(index).SetRange(-int(AMP*(1-battery_margin)), 0)
+        if index in station_node:
+            SOC_dimension.CumulVar(index).SetRange(0, 0)
+
     def load_callback(from_index):
         """Returns the demand of the node."""
         # Convert from routing variable Index to demands NodeIndex.
@@ -187,21 +206,40 @@ def solve_epdp_ortools(loc, load, station, depot, wind_mag, wind_dir, sec_local_
     index = routing.Start(0)
     pathes = []
     cost_output = 'Energy cost for vehicle0:\n'
+    soc_output = 'SoC for vehicle0:\n'
+    slack_output = 'Slack for vehicle0:\n'
+    
+    indexes = []
+    
     for i in range(veh_count):
         path = []
         index = routing.Start(i)
         while not routing.IsEnd(index):
             next_node = manager.IndexToNode(index)
+            indexes.append(index)
             while next_node>=node_count:
                 next_node -= stat_count
             path.append(next_node)
             
             cost_var = energy_dimension.CumulVar(index)
+            soc_var = SOC_dimension.CumulVar(index)
             cost_output += ' {},'.format(Tran.Int2Float(solution.Min(cost_var)))
+            soc_output += ' {},'.format(1-Tran.Int2Float(solution.Min(soc_var)))
+            
+            # slack_var = SOC1_dimension.SlackVar(index)
+            # slack_output += ' {},'.format(Tran.Int2Float(solution.Min(slack_var)))
             
             index = solution.Value(routing.NextVar(index))   
         next_node = manager.IndexToNode(index)
         path.append(next_node)
+
+        cost_var = energy_dimension.CumulVar(index)
+        cost_output += ' {}\n'.format(Tran.Int2Float(solution.Min(cost_var)))
+        soc_var = SOC_dimension.CumulVar(index)
+        soc_output += ' {}\n'.format(1-Tran.Int2Float(solution.Min(soc_var)))
+        
+        # slack_var = SOC1_dimension.SlackVar(index)
+        # slack_output += ' {}\n'.format(Tran.Int2Float(solution.Min(slack_var)))
         
         path_adjust = np.copy(path)
         for _ in range(station_copynum):
@@ -215,17 +253,39 @@ def solve_epdp_ortools(loc, load, station, depot, wind_mag, wind_dir, sec_local_
         
         pathes.append(path_adjust)
         
-        cost_var = energy_dimension.CumulVar(index)
-        cost_output += ' {}\n'.format(Tran.Int2Float(solution.Min(cost_var)))
+
+        '''
+        ################### DEBUG #########################
+        soc_output = 'soc for vehicle0:\n'
+        index = routing.Start(i)
+        while not routing.IsEnd(index):
+            next_node = manager.IndexToNode(index)
+            while next_node>=node_count:
+                next_node -= stat_count
+            path.append(next_node)
+            
+            soc_var = SOC_dimension.CumulVar(index)
+            soc_output += ' {},'.format(Tran.Int2Float(solution.Min(soc_var)))
+            
+            index = solution.Value(routing.NextVar(index))  
         
+        soc_var = SOC_dimension.CumulVar(index)
+        soc_output += ' {}\n'.format(Tran.Int2Float(solution.Min(soc_var)))
+        print(soc_output)
+        ######################################################
+        '''
+    # print(indexes)
+    # print(path)
     # print(pathes)
-    #print(cost_output)
-        
+    # #print(cost_output)
+    # print(soc_output)
+    # print(slack_output)
+    
     total_cost = Tran.Int2Float(solution.ObjectiveValue())
     # print('Objetive: {}'.format(total_cost))
     return total_cost, pathes
 
-    #print_solution(data, routing, assignment)
+    
 
 
 

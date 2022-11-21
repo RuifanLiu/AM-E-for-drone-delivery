@@ -1,8 +1,13 @@
 
 ######################################
+import problems
+
+
 cd Attentions-EPDP-DRL
 ### Start training
-python run.py --problem epdp --graph_size 20  --baseline rollout --run_name 'EPDP20_rollout' --model attention --n_encode_layer 3 --n_epochs 100 --attention_type Kool
+python run.py --problem epdp --graph_size 80  --baseline rollout --run_name 'EPDP80_rollout' --model attention --n_encode_layer 3 --n_epochs 100 --attention_type withedge1
+python run.py --problem sepdp --graph_size 80  --baseline critic --run_name 'SEPDP80_critic_edge1' --model attention --attention_type withedge1
+
 ### Resume training
 python run.py --problem sepdp --graph_size 20 --baseline critic --resume 'outputs/sepdp_20/SEPDP20_critic_20210712T124459/epoch-65.pt'  --model GPN --n_epochs 100 
 ### Evaluation
@@ -63,3 +68,52 @@ runfile('C:/Users/s313488/OneDrive - Cranfield University/Documents/Python/Atten
 debugfile('C:/Users/s313488/OneDrive - Cranfield University/Documents/Python/Attentions-EPDP-DRL/epdp_baseline.py',args="ortools 'data/epdp/epdp20_test_seed1000.pkl' -f -unable_multiprocessing --problem sepdp")
 
 runfile('C:/Users/s313488/OneDrive - Cranfield University/Documents/Python/Attentions-EPDP-DRL/generate_data.py',args="--name test --problem epdp --graph_sizes 20 --seed 100 --dataset_size 100")
+
+
+############## COMMANDS FOR GENERALIZATION ANALYSIS ########################
+## EPDP20
+python eval.py data/epdp/epdp20_test_seed1000.pkl --model 'outputs/epdp_20/EPDP20_rollout_edge1_20220320T161721/epoch-99.pt' --model_type attention --attention_type withedge1 --decode_strategy greedy -f
+&&
+python eval.py data/epdp/epdp40_test_seed1000.pkl --model 'outputs/epdp_20/EPDP20_rollout_edge1_20220320T161721/epoch-99.pt' --model_type attention --attention_type withedge1 --decode_strategy greedy -f
+&&
+python eval.py data/epdp/epdp80_test_seed1000.pkl --model 'outputs/epdp_20/EPDP20_rollout_edge1_20220320T161721/epoch-99.pt' --model_type attention --attention_type withedge1 --decode_strategy greedy -f
+&&
+## EPDP40
+python eval.py data/epdp/epdp20_test_seed1000.pkl --model 'outputs/epdp_40/EPDP40_rollout_edge1_20220328T113613/epoch-99.pt' --model_type attention --attention_type withedge1 --decode_strategy greedy -f
+&&
+python eval.py data/epdp/epdp40_test_seed1000.pkl --model 'outputs/epdp_40/EPDP40_rollout_edge1_20220328T113613/epoch-99.pt' --model_type attention --attention_type withedge1 --decode_strategy greedy -f
+&&
+python eval.py data/epdp/epdp80_test_seed1000.pkl --model 'outputs/epdp_40/EPDP40_rollout_edge1_20220328T113613/epoch-99.pt' --model_type attention --attention_type withedge1 --decode_strategy greedy -f
+&&
+## EPDP80
+python eval.py data/epdp/epdp20_test_seed1000.pkl --model 'outputs/epdp_80/EPDP80_rollout_edge1_20220921T170737/epoch-99.pt' --model_type attention --attention_type withedge1 --decode_strategy greedy -f
+&&
+python eval.py data/epdp/epdp40_test_seed1000.pkl --model 'outputs/epdp_80/EPDP80_rollout_edge1_20220921T170737/epoch-99.pt' --model_type attention --attention_type withedge1 --decode_strategy greedy -f
+&&
+python eval.py data/epdp/epdp80_test_seed1000.pkl --model 'outputs/epdp_80/EPDP80_rollout_edge1_20220921T170737/epoch-99.pt' --model_type attention --attention_type withedge1 --decode_strategy greedy -f
+
+############ PERFORMANCE WITH DIFFERENT WIND MAGNITUDE ##########################
+## 
+python epdp_baseline.py ortools1 'data/epdp/epdp20_test_seed1000.pkl' -f --battery_margin 0.2 --problem sepdp &&
+python epdp_baseline.py ortools10 'data/epdp/epdp40_test_seed1000.pkl' -f --battery_margin 0.2 --problem sepdp &&
+python epdp_baseline.py ortools50 'data/epdp/epdp80_test_seed1000.pkl' -f --battery_margin 0.2 --problem sepdp
+
+python epdp_baseline.py ortools1 'data/epdp/epdp20_test_seed1000.pkl' -f --battery_margin 0.3 --problem sepdp &&
+python epdp_baseline.py ortools10 'data/epdp/epdp40_test_seed1000.pkl' -f --battery_margin 0.3 --problem sepdp &&
+python epdp_baseline.py ortools50 'data/epdp/epdp80_test_seed1000.pkl' -f --battery_margin 0.3 --problem sepdp
+
+python eval.py data/epdp/epdp20_test_seed1000.pkl --model 'outputs/sepdp_20/SEPDP20_critic_att_20210713T143521/epoch-99.pt' --problem sepdp --model_type attention --attention_type Kool --decode_strategy greedy -f &&
+python eval.py data/epdp/epdp20_test_seed1000.pkl --model 'outputs/sepdp_20/SEPDP20_critic_edge1_20220321T235654/epoch-99.pt' --problem sepdp --model_type attention --attention_type withedge1 --decode_strategy greedy -f
+ 
+python eval.py data/epdp/epdp40_test_seed1000.pkl --model 'outputs/sepdp_40/SEPDP40_critic_att_20210713T143608/epoch-89.pt' --problem sepdp --model_type attention --attention_type Kool --decode_strategy greedy -f &&
+python eval.py data/epdp/epdp40_test_seed1000.pkl --model 'outputs/sepdp_40/SEPDP40_critic_20210712T124750/epoch-99.pt' --problem sepdp --model_type attention --attention_type withedge1 --decode_strategy greedy -f
+
+python eval.py data/epdp/epdp80_test_seed1000.pkl --model 'outputs/sepdp_80/SEPDP80_critic_20210719T182453/epoch-80.pt' --problem sepdp --model_type attention --attention_type Kool --decode_strategy greedy -f &&
+python eval.py data/epdp/epdp80_test_seed1000.pkl --model 'outputs/sepdp_80/EPDP80_critic_20220302T231559/epoch-99.pt' --problem sepdp --model_type attention --attention_type withedge1 --decode_strategy greedy -f
+
+
+### Compare different decoding strategy
+
+python eval.py data/epdp/epdp20_test_seed1000.pkl --model 'outputs/sepdp_20/SEPDP20_critic_edge1_20220321T235654/epoch-99.pt' --problem sepdp --model_type attention --attention_type withedge1 --decode_strategy greedy -f
+
+python eval.py data/epdp/epdp20_test_seed1000.pkl --model 'outputs/sepdp_20/SEPDP20_critic_edge1_20220321T235654/epoch-99.pt' --problem sepdp --model_type attention --attention_type withedge1 --decode_strategy sample --width 1280 -f 
