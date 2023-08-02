@@ -1,2 +1,2 @@
-# Attentions-EPDP-DRL-LSTM
- DDP-R with constant wind and LSTM to estimate hidden states
+# Edge-enhanced Attentions
+Edge enhanced attention models for solving drone delivery in presence of winds and recharging stations.
